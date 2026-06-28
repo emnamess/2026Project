@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { ImageGallery } from "@/components/shop/image-gallery";
 import { AddToCartButton } from "@/components/shop/add-to-cart-button";
 import { ProductReviews } from "@/components/shop/product-reviews";
+import { WishlistButton } from "@/components/shop/wishlist-button";
+import { auth } from "@/lib/auth";
 import type { Metadata } from "next";
 
 interface Props {
@@ -33,9 +35,21 @@ export default async function ProductPage({ params }: Props) {
 
   if (!product) notFound();
 
-  const price =
-    product.priceTnd != null ? Number(product.priceTnd) : Number(product.priceUsd);
+  const session = await auth();
+  const userId = session?.user?.id;
 
+  const [price, wishlistItem] = await Promise.all([
+    Promise.resolve(
+      product.priceTnd != null ? Number(product.priceTnd) : Number(product.priceUsd)
+    ),
+    userId
+      ? prisma.wishlistItem.findUnique({
+          where: { userId_productId: { userId, productId: product.id } },
+        })
+      : null,
+  ]);
+
+  const savedInWishlist = !!wishlistItem;
   const inStock = product.stockQuantity > 0;
 
   const reviewCount = product.reviews.length;
@@ -125,9 +139,11 @@ export default async function ProductPage({ params }: Props) {
               }}
             />
 
-            <button className="w-full h-12 border border-neutral-200 text-neutral-700 text-sm hover:bg-neutral-50 transition-colors">
-              Ajouter aux favoris
-            </button>
+            <WishlistButton
+              productId={product.id}
+              initialSaved={savedInWishlist}
+              isLoggedIn={!!userId}
+            />
           </div>
 
           {/* Trust points */}
