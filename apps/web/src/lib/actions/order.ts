@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { sendOrderEmails } from "@/lib/email";
 import { PaymentMethod, OrderStatus } from "@/generated/prisma/client";
 
 interface CartItemInput {
@@ -90,6 +91,19 @@ export async function createOrder(formData: FormData) {
       })
     ),
   ]);
+
+  // Fire emails without blocking the redirect
+  sendOrderEmails({
+    orderNumber,
+    customerName: `${firstName} ${lastName}`,
+    customerEmail: email,
+    items: cartItems.map((i) => ({ name: i.nameFr, quantity: i.quantity, unitPrice: i.price })),
+    subtotal,
+    shipping,
+    total,
+    paymentMethod,
+    address: { street, city, governorate, postalCode },
+  }).catch(() => {}); // never crash the order flow on email failure
 
   redirect(`/commande/confirmation/${orderNumber}`);
 }
