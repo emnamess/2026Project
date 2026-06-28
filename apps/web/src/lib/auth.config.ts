@@ -1,20 +1,41 @@
 import type { NextAuthConfig } from "next-auth";
 
 // Edge-compatible config — no Prisma, no bcrypt, no Node.js built-ins.
-// Used by middleware only.
 export const authConfig = {
   pages: { signIn: "/admin/login" },
   session: { strategy: "jwt" },
   providers: [],
   callbacks: {
+    jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+      }
+      return token;
+    },
+    session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+      }
+      return session;
+    },
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isLoginPage = nextUrl.pathname === "/admin/login";
+      const isAdminLogin = nextUrl.pathname === "/admin/login";
+      const isAdminRoute = nextUrl.pathname.startsWith("/admin");
+      const isAccountRoute = nextUrl.pathname.startsWith("/compte");
 
-      if (isLoginPage && isLoggedIn)
-        return Response.redirect(new URL("/admin", nextUrl));
-      if (!isLoginPage && !isLoggedIn)
-        return Response.redirect(new URL("/admin/login", nextUrl));
+      // Admin routes: redirect to admin login if not logged in
+      if (isAdminRoute) {
+        if (isAdminLogin && isLoggedIn) return Response.redirect(new URL("/admin", nextUrl));
+        if (!isAdminLogin && !isLoggedIn) return Response.redirect(new URL("/admin/login", nextUrl));
+      }
+
+      // Customer account: redirect to /connexion if not logged in
+      if (isAccountRoute && !isLoggedIn) {
+        return Response.redirect(new URL("/connexion?redirect=/compte", nextUrl));
+      }
 
       return true;
     },

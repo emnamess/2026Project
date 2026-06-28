@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import { useCart } from "@/lib/store/cart";
 
 const navLinks = [
@@ -13,6 +14,8 @@ const navLinks = [
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const count = useCart((s) => s.count());
+  const { data: session } = useSession();
+  const isLoggedIn = !!session?.user;
 
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-neutral-200">
@@ -38,16 +41,28 @@ export function Navbar() {
 
           {/* Right side */}
           <div className="flex items-center gap-4">
-            <button
-              aria-label="Rechercher"
-              className="hidden md:flex text-neutral-600 hover:text-neutral-900 transition-colors"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="11" cy="11" r="8" />
-                <path d="m21 21-4.35-4.35" />
-              </svg>
-            </button>
+            {/* Account */}
+            {isLoggedIn ? (
+              <Link
+                href="/compte"
+                aria-label="Mon compte"
+                className="hidden md:flex text-neutral-600 hover:text-neutral-900 transition-colors"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </Link>
+            ) : (
+              <Link
+                href="/connexion"
+                className="hidden md:flex text-sm text-neutral-600 hover:text-neutral-900 transition-colors"
+              >
+                Connexion
+              </Link>
+            )}
 
+            {/* Cart */}
             <Link
               href="/panier"
               aria-label="Panier"
@@ -100,6 +115,21 @@ export function Navbar() {
                 {link.label}
               </Link>
             ))}
+            <hr className="border-neutral-100" />
+            {isLoggedIn ? (
+              <Link href="/compte" className="text-sm text-neutral-700" onClick={() => setMenuOpen(false)}>
+                Mon compte
+              </Link>
+            ) : (
+              <>
+                <Link href="/connexion" className="text-sm text-neutral-700" onClick={() => setMenuOpen(false)}>
+                  Connexion
+                </Link>
+                <Link href="/inscription" className="text-sm text-neutral-700" onClick={() => setMenuOpen(false)}>
+                  Créer un compte
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       )}
