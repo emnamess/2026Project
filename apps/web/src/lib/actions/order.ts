@@ -37,6 +37,21 @@ export async function createOrder(formData: FormData) {
   const cartItems: CartItemInput[] = JSON.parse(cartJson ?? "[]");
   if (cartItems.length === 0) throw new Error("Votre panier est vide.");
 
+  // Verify stock availability before doing anything
+  const products = await prisma.product.findMany({
+    where: { id: { in: cartItems.map((i) => i.id) } },
+    select: { id: true, nameFr: true, stockQuantity: true },
+  });
+
+  for (const item of cartItems) {
+    const product = products.find((p) => p.id === item.id);
+    if (!product || product.stockQuantity < item.quantity) {
+      throw new Error(
+        `"${product?.nameFr ?? item.nameFr}" n'est plus disponible en quantité suffisante.`
+      );
+    }
+  }
+
   const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
   const shipping = subtotal >= 200 ? 0 : 8;
   const total = subtotal + shipping;
@@ -47,25 +62,34 @@ export async function createOrder(formData: FormData) {
     street, city, governorate, postalCode, country: "TN",
   });
 
-  await prisma.order.create({
-    data: {
-      orderNumber,
-      paymentMethod: paymentMethod as PaymentMethod,
-      subtotalUsd: subtotal,
-      shippingCostUsd: shipping,
-      totalUsd: total,
-      notes: shippingNote,
-      items: {
-        create: cartItems.map((item) => ({
-          productId: item.id,
-          productName: item.nameFr,
-          quantity: item.quantity,
-          unitPriceUsd: item.price,
-          subtotalUsd: item.price * item.quantity,
-        })),
+  // Create order and decrement stock in one transaction
+  await prisma.$transaction([
+    prisma.order.create({
+      data: {
+        orderNumber,
+        paymentMethod: paymentMethod as PaymentMethod,
+        subtotalUsd: subtotal,
+        shippingCostUsd: shipping,
+        totalUsd: total,
+        notes: shippingNote,
+        items: {
+          create: cartItems.map((item) => ({
+            productId: item.id,
+            productName: item.nameFr,
+            quantity: item.quantity,
+            unitPriceUsd: item.price,
+            subtotalUsd: item.price * item.quantity,
+          })),
+        },
       },
-    },
-  });
+    }),
+    ...cartItems.map((item) =>
+      prisma.product.update({
+        where: { id: item.id },
+        data: { stockQuantity: { decrement: item.quantity } },
+      })
+    ),
+  ]);
 
   redirect(`/commande/confirmation/${orderNumber}`);
 }
