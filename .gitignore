@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+build/
+
+# env files — never commit secrets
+.env
+.env.*
+!.env.example
+
+# pnpm
+.pnpm-debug.log*
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+
+# generated Prisma client
+apps/web/src/generated/
+
+# uploads (user content — not tracked in git)
+apps/web/public/uploads/
+
+# vercel
+.vercel
+
+# editor
+.vscode/
+.idea/
+
+# claude
+.claude/
