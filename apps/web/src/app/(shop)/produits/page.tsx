@@ -1,9 +1,18 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { ProductCard } from "@/components/shop/product-card";
+import { SortSelect } from "@/components/shop/sort-select";
+import type { Prisma } from "@/generated/prisma/client";
 
 interface Props {
-  searchParams: Promise<{ categorie?: string; q?: string }>;
+  searchParams: Promise<{
+    categorie?: string;
+    q?: string;
+    tri?: string;
+    prixMin?: string;
+    prixMax?: string;
+  }>;
 }
 
 export async function generateMetadata({ searchParams }: Props) {
@@ -11,8 +20,35 @@ export async function generateMetadata({ searchParams }: Props) {
   return { title: q ? `"${q}" — Artisan.TN` : "Tous les produits — Artisan.TN" };
 }
 
+function buildOrderBy(tri: string): Prisma.ProductOrderByWithRelationInput {
+  switch (tri) {
+    case "prix-asc":  return { priceTnd: { sort: "asc",  nulls: "last" } };
+    case "prix-desc": return { priceTnd: { sort: "desc", nulls: "last" } };
+    case "nom-az":    return { nameFr: "asc" };
+    default:          return { createdAt: "desc" };
+  }
+}
+
+function buildUrl(base: Record<string, string | undefined>, overrides: Record<string, string | undefined>) {
+  const merged = { ...base, ...overrides };
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(merged)) {
+    if (v) params.set(k, v);
+  }
+  const qs = params.toString();
+  return `/produits${qs ? `?${qs}` : ""}`;
+}
+
 export default async function ProduitsPage({ searchParams }: Props) {
-  const { categorie, q } = await searchParams;
+  const { categorie, q, tri = "nouveautes", prixMin, prixMax } = await searchParams;
+
+  const priceFilter: Prisma.ProductWhereInput = {};
+  if (prixMin || prixMax) {
+    priceFilter.priceTnd = {
+      ...(prixMin ? { gte: Number(prixMin) } : {}),
+      ...(prixMax ? { lte: Number(prixMax) } : {}),
+    };
+  }
 
   const [categories, products] = await Promise.all([
     prisma.category.findMany({ orderBy: { nameFr: "asc" } }),
@@ -27,34 +63,64 @@ export default async function ProduitsPage({ searchParams }: Props) {
             { descriptionFr: { contains: q, mode: "insensitive" } },
           ],
         } : {}),
+        ...priceFilter,
       },
       include: {
         images: { orderBy: { displayOrder: "asc" }, take: 1 },
         category: true,
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: buildOrderBy(tri),
     }),
   ]);
 
   const activeCategory = categories.find((c) => c.slugFr === categorie);
 
+  // base params without sort/price so links preserve search+category
+  const baseParams = {
+    categorie,
+    q,
+    tri: tri !== "nouveautes" ? tri : undefined,
+    prixMin,
+    prixMax,
+  };
+
+  const hasActiveFilters = !!(prixMin || prixMax);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-light tracking-tight text-neutral-900">
-          {q
-            ? `Résultats pour "${q}"`
-            : activeCategory?.nameFr ?? "Tous les produits"}
-        </h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          {products.length} produit{products.length !== 1 ? "s" : ""}
-          {q && (
-            <Link href={`/produits${categorie ? `?categorie=${categorie}` : ""}`} className="ml-3 text-neutral-400 hover:text-neutral-700 underline">
-              Effacer la recherche
-            </Link>
-          )}
-        </p>
+      <div className="flex items-end justify-between mb-8 gap-4">
+        <div>
+          <h1 className="text-3xl font-light tracking-tight text-neutral-900">
+            {q ? `Résultats pour "${q}"` : activeCategory?.nameFr ?? "Tous les produits"}
+          </h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            {products.length} produit{products.length !== 1 ? "s" : ""}
+            {q && (
+              <Link
+                href={buildUrl(baseParams, { q: undefined })}
+                className="ml-3 text-neutral-400 hover:text-neutral-700 underline"
+              >
+                Effacer la recherche
+              </Link>
+            )}
+            {hasActiveFilters && (
+              <Link
+                href={buildUrl(baseParams, { prixMin: undefined, prixMax: undefined })}
+                className="ml-3 text-neutral-400 hover:text-neutral-700 underline"
+              >
+                Effacer les filtres
+              </Link>
+            )}
+          </p>
+        </div>
+
+        {/* Sort (desktop) */}
+        <div className="hidden sm:block shrink-0">
+          <Suspense>
+            <SortSelect current={tri} />
+          </Suspense>
+        </div>
       </div>
 
       <div className="flex gap-8">
@@ -63,6 +129,7 @@ export default async function ProduitsPage({ searchParams }: Props) {
           {/* Search */}
           <form action="/produits" method="get">
             {categorie && <input type="hidden" name="categorie" value={categorie} />}
+            {tri && tri !== "nouveautes" && <input type="hidden" name="tri" value={tri} />}
             <div className="relative">
               <input
                 name="q"
@@ -76,12 +143,53 @@ export default async function ProduitsPage({ searchParams }: Props) {
             </div>
           </form>
 
+          {/* Price range */}
+          <form action="/produits" method="get">
+            {categorie && <input type="hidden" name="categorie" value={categorie} />}
+            {q && <input type="hidden" name="q" value={q} />}
+            {tri && tri !== "nouveautes" && <input type="hidden" name="tri" value={tri} />}
+            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-3">Prix (TND)</p>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                name="prixMin"
+                type="number"
+                min="0"
+                defaultValue={prixMin ?? ""}
+                placeholder="Min"
+                className="w-full h-8 rounded border border-neutral-200 text-sm px-2 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+              />
+              <span className="text-neutral-300 text-sm">—</span>
+              <input
+                name="prixMax"
+                type="number"
+                min="0"
+                defaultValue={prixMax ?? ""}
+                placeholder="Max"
+                className="w-full h-8 rounded border border-neutral-200 text-sm px-2 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full h-8 bg-neutral-900 text-white text-xs rounded hover:bg-neutral-700 transition-colors"
+            >
+              Appliquer
+            </button>
+            {hasActiveFilters && (
+              <Link
+                href={buildUrl(baseParams, { prixMin: undefined, prixMax: undefined })}
+                className="block text-center mt-1.5 text-xs text-neutral-400 hover:text-neutral-700 underline"
+              >
+                Réinitialiser
+              </Link>
+            )}
+          </form>
+
           {/* Categories */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-neutral-500 mb-3">Catégories</p>
             <nav className="space-y-1">
               <Link
-                href={q ? `/produits?q=${encodeURIComponent(q)}` : "/produits"}
+                href={buildUrl(baseParams, { categorie: undefined })}
                 className={`block text-sm py-1 ${!categorie ? "text-neutral-900 font-medium" : "text-neutral-500 hover:text-neutral-900"}`}
               >
                 Tout
@@ -89,7 +197,7 @@ export default async function ProduitsPage({ searchParams }: Props) {
               {categories.map((c) => (
                 <Link
                   key={c.id}
-                  href={`/produits?categorie=${c.slugFr}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                  href={buildUrl(baseParams, { categorie: c.slugFr ?? undefined })}
                   className={`block text-sm py-1 ${
                     categorie === c.slugFr ? "text-neutral-900 font-medium" : "text-neutral-500 hover:text-neutral-900"
                   }`}
@@ -103,26 +211,32 @@ export default async function ProduitsPage({ searchParams }: Props) {
 
         {/* Product grid */}
         <div className="flex-1">
-          {/* Mobile: search + category pills */}
+          {/* Mobile controls */}
           <div className="lg:hidden space-y-3 mb-6">
-            <form action="/produits" method="get">
-              {categorie && <input type="hidden" name="categorie" value={categorie} />}
-              <div className="relative">
-                <input
-                  name="q"
-                  defaultValue={q ?? ""}
-                  placeholder="Rechercher un produit…"
-                  className="w-full h-10 pl-9 pr-4 rounded-lg border border-neutral-200 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400"
-                />
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-                </svg>
-              </div>
-            </form>
+            <div className="flex gap-2">
+              <form action="/produits" method="get" className="flex-1">
+                {categorie && <input type="hidden" name="categorie" value={categorie} />}
+                {tri && tri !== "nouveautes" && <input type="hidden" name="tri" value={tri} />}
+                <div className="relative">
+                  <input
+                    name="q"
+                    defaultValue={q ?? ""}
+                    placeholder="Rechercher un produit…"
+                    className="w-full h-10 pl-9 pr-4 rounded-lg border border-neutral-200 text-sm focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                  />
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                  </svg>
+                </div>
+              </form>
+              <Suspense>
+                <SortSelect current={tri} />
+              </Suspense>
+            </div>
 
             <div className="flex gap-2 overflow-x-auto pb-1">
               <Link
-                href={q ? `/produits?q=${encodeURIComponent(q)}` : "/produits"}
+                href={buildUrl(baseParams, { categorie: undefined })}
                 className={`shrink-0 px-3 py-1 rounded-full text-sm border ${!categorie ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-200 text-neutral-600"}`}
               >
                 Tout
@@ -130,7 +244,7 @@ export default async function ProduitsPage({ searchParams }: Props) {
               {categories.map((c) => (
                 <Link
                   key={c.id}
-                  href={`/produits?categorie=${c.slugFr}${q ? `&q=${encodeURIComponent(q)}` : ""}`}
+                  href={buildUrl(baseParams, { categorie: c.slugFr ?? undefined })}
                   className={`shrink-0 px-3 py-1 rounded-full text-sm border ${
                     categorie === c.slugFr ? "bg-neutral-900 text-white border-neutral-900" : "border-neutral-200 text-neutral-600"
                   }`}
