@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -6,7 +7,7 @@ const STATUS_LABELS: Record<string, string> = {
   processing: "En traitement",
   shipped: "Expédiée",
   delivered: "Livrée",
-  cancelled: "Annulée",
+  canceled: "Annulée",
   refunded: "Remboursée",
 };
 
@@ -16,7 +17,7 @@ const STATUS_COLORS: Record<string, string> = {
   processing: "bg-purple-50 text-purple-700",
   shipped: "bg-indigo-50 text-indigo-700",
   delivered: "bg-green-50 text-green-700",
-  cancelled: "bg-neutral-100 text-neutral-500",
+  canceled: "bg-neutral-100 text-neutral-500",
   refunded: "bg-red-50 text-red-600",
 };
 
@@ -41,12 +42,13 @@ export default async function CommandesPage() {
               <th className="text-left px-4 py-3 font-medium text-neutral-600">Total</th>
               <th className="text-left px-4 py-3 font-medium text-neutral-600">Statut</th>
               <th className="text-left px-4 py-3 font-medium text-neutral-600">Date</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {orders.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-neutral-400">
+                <td colSpan={7} className="px-4 py-12 text-center text-neutral-400">
                   Aucune commande pour le moment.
                 </td>
               </tr>
@@ -68,6 +70,11 @@ export default async function CommandesPage() {
                 </td>
                 <td className="px-4 py-3 text-neutral-500 text-xs">
                   {new Date(o.createdAt).toLocaleDateString("fr-FR")}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Link href={`/admin/commandes/${o.id}`} className="text-xs text-neutral-600 hover:text-neutral-900 underline">
+                    Voir
+                  </Link>
                 </td>
               </tr>
             ))}

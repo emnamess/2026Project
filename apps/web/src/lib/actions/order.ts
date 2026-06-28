@@ -1,8 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { PaymentMethod } from "@/generated/prisma/client";
+import { PaymentMethod, OrderStatus } from "@/generated/prisma/client";
 
 interface CartItemInput {
   id: string;
@@ -34,9 +35,7 @@ export async function createOrder(formData: FormData) {
   }
 
   const cartItems: CartItemInput[] = JSON.parse(cartJson ?? "[]");
-  if (cartItems.length === 0) {
-    throw new Error("Votre panier est vide.");
-  }
+  if (cartItems.length === 0) throw new Error("Votre panier est vide.");
 
   const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
   const shipping = subtotal >= 200 ? 0 : 8;
@@ -44,15 +43,8 @@ export async function createOrder(formData: FormData) {
   const orderNumber = generateOrderNumber();
 
   const shippingNote = JSON.stringify({
-    firstName,
-    lastName,
-    email,
-    phone,
-    street,
-    city,
-    governorate,
-    postalCode,
-    country: "TN",
+    firstName, lastName, email, phone,
+    street, city, governorate, postalCode, country: "TN",
   });
 
   await prisma.order.create({
@@ -76,4 +68,18 @@ export async function createOrder(formData: FormData) {
   });
 
   redirect(`/commande/confirmation/${orderNumber}`);
+}
+
+export async function updateOrderStatus(id: string, status: string, trackingNumber?: string) {
+  await prisma.order.update({
+    where: { id },
+    data: {
+      status: status as OrderStatus,
+      ...(trackingNumber ? { trackingNumber } : {}),
+      ...(status === "shipped" ? { shippedAt: new Date() } : {}),
+      ...(status === "delivered" ? { deliveredAt: new Date() } : {}),
+    },
+  });
+  revalidatePath(`/admin/commandes/${id}`);
+  revalidatePath("/admin/commandes");
 }
