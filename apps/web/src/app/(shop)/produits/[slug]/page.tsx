@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ImageGallery } from "@/components/shop/image-gallery";
 import { AddToCartButton } from "@/components/shop/add-to-cart-button";
+import { ProductReviews } from "@/components/shop/product-reviews";
 import type { Metadata } from "next";
 
 interface Props {
@@ -26,6 +27,7 @@ export default async function ProductPage({ params }: Props) {
     include: {
       images: { orderBy: { displayOrder: "asc" } },
       category: true,
+      reviews: { where: { status: "approved" }, select: { rating: true } },
     },
   });
 
@@ -35,6 +37,12 @@ export default async function ProductPage({ params }: Props) {
     product.priceTnd != null ? Number(product.priceTnd) : Number(product.priceUsd);
 
   const inStock = product.stockQuantity > 0;
+
+  const reviewCount = product.reviews.length;
+  const avgRating =
+    reviewCount > 0
+      ? product.reviews.reduce((s, r) => s + r.rating, 0) / reviewCount
+      : 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
@@ -75,6 +83,21 @@ export default async function ProductPage({ params }: Props) {
           </h1>
 
           <p className="mt-4 text-2xl font-medium text-neutral-900">{price.toFixed(2)} TND</p>
+
+          {reviewCount > 0 && (
+            <div className="flex items-center gap-1.5 mt-2">
+              {[1,2,3,4,5].map((s) => (
+                <svg key={s} width="14" height="14" viewBox="0 0 24 24"
+                  fill={s <= Math.round(avgRating) ? "currentColor" : "none"}
+                  stroke="currentColor" strokeWidth="1.5"
+                  className={s <= Math.round(avgRating) ? "text-amber-400" : "text-neutral-200"}
+                >
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              ))}
+              <span className="text-xs text-neutral-500">{avgRating.toFixed(1)} ({reviewCount})</span>
+            </div>
+          )}
 
           {product.descriptionFr && (
             <div className="mt-6 text-sm text-neutral-600 leading-relaxed whitespace-pre-wrap">
@@ -122,6 +145,8 @@ export default async function ProductPage({ params }: Props) {
           </div>
         </div>
       </div>
+
+      <ProductReviews productId={product.id} />
     </div>
   );
 }
